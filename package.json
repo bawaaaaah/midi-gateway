@@ -1,0 +1,34 @@
+{
+  "name": "midi-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:engine && concurrently -n engine,server,web -c magenta,blue,green \"npm:dev:engine\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:engine": "npm -w @midi-gateway/engine run build -- --watch --preserveWatchOutput",
+    "dev:server": "npm -w @midi-gateway/server run dev",
+    "dev:web": "npm -w @midi-gateway/web run dev",
+    "build:engine": "npm -w @midi-gateway/engine run build",
+    "build": "npm -w @midi-gateway/engine run build && npm -w @midi-gateway/web run build && npm -w @midi-gateway/server run build",
+    "start": "npm -w @midi-gateway/server run start",
+    "test": "npm -w @midi-gateway/engine run test",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "fsevents@2.3.3": true,
+    "@julusian/midi@3.8.1": true,
+    "esbuild@0.28.2": true
+  }
+}

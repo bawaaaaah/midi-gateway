@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "name": "Drum kit",
+  "description": "GM names, hi-hat open/half/closed from pedal CC4 (sampled at strike), and an optional kick+snare accent combo.",
+  "ports": [
+    { "id": "in", "name": "Gateway In", "kind": "virtual-in" },
+    { "id": "out", "name": "Gateway Out", "kind": "virtual-out" }
+  ],
+  "noteNames": {
+    "36": "Kick",
+    "38": "Snare",
+    "42": "Closed HH",
+    "44": "Pedal HH",
+    "46": "Open HH"
+  },
+  "routes": [
+    {
+      "id": "r-kit",
+      "name": "Kit remap",
+      "enabled": true,
+      "sources": ["in"],
+      "destinations": ["out"],
+      "transforms": [
+        { "id": "learn-tap", "type": "learnTap", "enabled": true },
+        {
+          "id": "hihat",
+          "type": "keyboardMapper",
+          "enabled": true,
+          "partition": { "mode": "explicitList", "groups": [{ "id": "hh", "notes": [46] }] },
+          "layers": [
+            {
+              "id": "hh-closed",
+              "when": { "cc": 4, "min": 81 },
+              "buckets": { "hh": { "note": 42, "name": "Closed HH" } }
+            },
+            {
+              "id": "hh-half",
+              "when": { "cc": 4, "min": 30, "max": 80 },
+              "buckets": {
+                "hh": { "note": 46, "name": "Half HH", "velocity": { "mode": "scale", "min": 1, "max": 100 } }
+              }
+            },
+            {
+              "id": "hh-open",
+              "when": "default",
+              "buckets": { "hh": { "note": 46, "name": "Open HH" } }
+            }
+          ]
+        },
+        {
+          "id": "accent",
+          "type": "combo",
+          "enabled": false,
+          "windowMs": 25,
+          "triggers": [
+            { "id": "trig-kick", "kind": "note", "value": 36 },
+            { "id": "trig-snare", "kind": "note", "value": 38 }
+          ],
+          "output": { "note": 39, "name": "Kick+Snare accent" },
+          "suppressTriggers": false
+        }
+      ]
+    }
+  ]
+}

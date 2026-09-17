@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "name": "Piano modes",
+  "description": "Group-by-note and split-every-N, each with an expression-pedal layer (CC 11). Route the 'Gateway In' virtual port to 'Gateway Out'.",
+  "ports": [
+    { "id": "in", "name": "Gateway In", "kind": "virtual-in" },
+    { "id": "out", "name": "Gateway Out", "kind": "virtual-out" }
+  ],
+  "noteNames": {},
+  "routes": [
+    {
+      "id": "r-group",
+      "name": "Group every C -> C4  (pedal -> C5)",
+      "enabled": true,
+      "sources": ["in"],
+      "destinations": ["out"],
+      "transforms": [
+        {
+          "id": "kbm-group",
+          "type": "keyboardMapper",
+          "enabled": true,
+          "partition": { "mode": "byPitchClass" },
+          "layers": [
+            {
+              "id": "l-pedal",
+              "when": { "cc": 11, "min": 64 },
+              "buckets": { "pc0": { "note": 84, "name": "C5 (pedal)" } }
+            },
+            {
+              "id": "l-default",
+              "when": "default",
+              "buckets": { "pc0": { "note": 60, "name": "C4" } }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r-split",
+      "name": "Split every 12 keys -> one note per octave",
+      "enabled": false,
+      "sources": ["in"],
+      "destinations": ["out"],
+      "transforms": [
+        {
+          "id": "kbm-split",
+          "type": "keyboardMapper",
+          "enabled": true,
+          "partition": { "mode": "rangeGenerator", "start": 21, "size": 12, "count": 8 },
+          "layers": [
+            {
+              "id": "l-split-default",
+              "when": "default",
+              "buckets": {
+                "z0": { "note": 36 },
+                "z1": { "note": 38 },
+                "z2": { "note": 40 },
+                "z3": { "note": 41 },
+                "z4": { "note": 43 },
+                "z5": { "note": 45 },
+                "z6": { "note": 47 },
+                "z7": { "note": 48 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

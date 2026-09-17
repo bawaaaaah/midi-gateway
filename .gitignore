@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.log
+coverage/
+
+# Local runtime data (presets / config live in ~/midi-gateway by default)
+/data/
