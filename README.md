@@ -160,3 +160,9 @@ apps/web          React + Vite + Tailwind UI. Zustand store fed by the WebSocket
 
 Example presets are in [`examples/`](examples/) — copy them into your `presetsDir`
 to try them.
+
+---
+
+## License
+
+[MIT](LICENSE) © Bawaaaaah
