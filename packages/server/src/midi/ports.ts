@@ -36,9 +36,14 @@ interface LivePort {
   connected: boolean;
   input?: RawInput | RtpPortHandle;
   output?: RawOutput | RtpPortHandle;
+  /** Set for `rtp` ports (same handle as input/output). */
+  rtp?: RtpPortHandle;
   inCount: number;
   outCount: number;
 }
+
+const isHardware = (p: Port) => p.kind === "hw-in" || p.kind === "hw-out";
+const matchesSystemName = (osName: string, wanted: string) => osName === wanted || osName.includes(wanted);
 
 export interface PortRegistryEvents {
   event: [portId: string, ev: MidiEvent];
@@ -92,7 +97,12 @@ export class PortRegistry extends EventEmitter {
       inCount: 0,
       outCount: 0,
     };
+    this.open(lp);
+    return lp;
+  }
 
+  private open(lp: LivePort): void {
+    const port = lp.port;
     try {
       switch (port.kind) {
         case "hw-in": {
@@ -123,8 +133,8 @@ export class PortRegistry extends EventEmitter {
             const h = this.rtp.createSession(port.rtp);
             this.wireInput(lp, h);
             lp.output = h;
+            lp.rtp = h;
             lp.available = this.rtp.available;
-            lp.connected = this.rtp.available;
           }
           break;
         }
@@ -132,7 +142,30 @@ export class PortRegistry extends EventEmitter {
     } catch (err) {
       console.warn(`[ports] failed to open ${port.name}: ${(err as Error).message}`);
     }
-    return lp;
+  }
+
+  /**
+   * RtMidi does not notice a device being unplugged or plugged back in: re-open
+   * hardware ports whose device (re)appeared and drop the ones that vanished.
+   * Call it periodically.
+   * @returns true when a port's availability changed.
+   */
+  refreshHardware(): boolean {
+    const hw = [...this.live.values()].filter((lp) => isHardware(lp.port));
+    if (hw.length === 0) return false;
+    const inputs = this.backend.listInputs();
+    const outputs = this.backend.listOutputs();
+    let changed = false;
+    for (const lp of hw) {
+      const wanted = lp.port.systemName ?? lp.port.name;
+      const present = (lp.port.kind === "hw-in" ? inputs : outputs).some((n) => matchesSystemName(n, wanted));
+      if (present === lp.available) continue;
+      this.teardown(lp);
+      if (present) this.open(lp);
+      // A device that shows up but still can't be opened stays "offline": no change.
+      if (lp.available === present) changed = true;
+    }
+    return changed;
   }
 
   private wireInput(lp: LivePort, h: RawInput | RtpPortHandle): void {
@@ -147,21 +180,23 @@ export class PortRegistry extends EventEmitter {
 
   private teardown(lp: LivePort): void {
     try {
-      (lp.input as { close?: () => void } | undefined)?.close?.();
+      lp.input?.close();
     } catch {
       /* ignore */
     }
     try {
-      if (lp.output && lp.output !== lp.input) (lp.output as { close?: () => void }).close?.();
+      if (lp.output && lp.output !== lp.input) lp.output.close();
     } catch {
       /* ignore */
     }
+    lp.input = lp.output = lp.rtp = undefined;
+    lp.available = lp.connected = false;
   }
 
   send(portId: string, ev: MidiEvent): void {
     const lp = this.live.get(portId);
     if (!lp?.output) return;
-    (lp.output as { send: (b: number[]) => void }).send(serialize(ev));
+    lp.output.send(serialize(ev));
     lp.outCount++;
   }
 
@@ -169,15 +204,10 @@ export class PortRegistry extends EventEmitter {
   allNotesOff(portId: string): void {
     const lp = this.live.get(portId);
     if (!lp?.output) return;
-    const send = (b: number[]) => (lp.output as { send: (x: number[]) => void }).send(b);
     for (let ch = 0; ch < 16; ch++) {
-      send([0xb0 | ch, 120, 0]); // all sound off
-      send([0xb0 | ch, 123, 0]); // all notes off
+      lp.output.send([0xb0 | ch, 120, 0]); // all sound off
+      lp.output.send([0xb0 | ch, 123, 0]); // all notes off
     }
-  }
-
-  destinationsFor(): string[] {
-    return [...this.live.values()].filter((lp) => lp.output).map((lp) => lp.port.id);
   }
 
   runtimePorts(): RuntimePort[] {
@@ -185,16 +215,17 @@ export class PortRegistry extends EventEmitter {
       ...lp.port,
       direction: lp.direction,
       available: lp.available,
-      connected: lp.connected,
+      connected: lp.rtp ? lp.available && lp.rtp.hasPeer() : lp.connected,
     }));
   }
 
   /** OS ports the preset does not reference yet, for the "add port" picker. */
   unconfigured(preset: Preset): { inputs: string[]; outputs: string[] } {
-    const used = new Set(preset.ports.map((p) => p.systemName ?? p.name));
+    const usedIn = preset.ports.filter((p) => p.kind === "hw-in").map((p) => p.systemName ?? p.name);
+    const usedOut = preset.ports.filter((p) => p.kind === "hw-out").map((p) => p.systemName ?? p.name);
     return {
-      inputs: this.backend.listInputs().filter((n) => !used.has(n) && !isOwnVirtual(n, preset)),
-      outputs: this.backend.listOutputs().filter((n) => !used.has(n) && !isOwnVirtual(n, preset)),
+      inputs: this.backend.listInputs().filter((n) => !usedIn.includes(n) && !isOwnVirtual(n, preset)),
+      outputs: this.backend.listOutputs().filter((n) => !usedOut.includes(n) && !isOwnVirtual(n, preset)),
     };
   }
 
