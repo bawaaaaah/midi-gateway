@@ -92,7 +92,11 @@ Each incoming note is resolved in three steps:
    channel and velocity.
 
 Folded notes are reference‑counted and note‑offs replay the *exact* output the
-note‑on produced, so changing a pedal mid‑note never leaves a stuck note.
+note‑on produced, so changing a pedal mid‑note never leaves a stuck note. By
+default a key that lands on a note already sounding (e.g. C3 while C2 holds the
+shared C4) is silent; turn on **Retrigger** to re‑play the note (note‑off +
+note‑on with the new velocity) on every hit. It still stops only when the last
+key is released.
 
 | You want | Set up |
 |---|---|

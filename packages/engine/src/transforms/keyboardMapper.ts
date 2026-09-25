@@ -150,6 +150,9 @@ export function createKeyboardMapper(cfg: Cfg): Transform {
         const evts = [...pre];
         if (res.releaseFirst) evts.push(noteOffEvent(ev, res.releaseFirst, 0));
         if (res.emit) evts.push(noteOnEvent(ev, out, velocity));
+        // Already sounding for another held key: optionally re-play it. The off
+        // comes first so receivers that stack voices never end up with two.
+        else if (cfg.retrigger) evts.push(noteOffEvent(ev, out, 0), noteOnEvent(ev, out, velocity));
         return evts;
       }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createKeyboardMapper } from "../src/transforms/keyboardMapper.js";
+import { transformConfigSchema } from "../src/presetSchema.js";
 import type { Layer, Partition, TransformConfig } from "../src/types.js";
 import { harness, noteOn, noteOff, cc, fmtAll, resetClock } from "./helpers.js";
 
@@ -147,5 +148,41 @@ describe("keyboardMapper - misc", () => {
     const h = harness(t);
     h.feed(noteOn(48, 100));
     expect(fmtAll(h.flush())).toEqual(["off:ch0:60"]);
+  });
+});
+
+describe("keyboardMapper - retrigger option", () => {
+  const folded = (retrigger?: boolean) =>
+    createKeyboardMapper(kbm({ mode: "byPitchClass" }, [dflt({ pc0: { note: 60 } })], { retrigger }));
+
+  it("is off by default: a second key on a sounding note is silent", () => {
+    resetClock();
+    const h = harness(folded());
+    expect(fmtAll(h.feed(noteOn(48, 100)))).toEqual(["on:ch0:60@100"]);
+    expect(fmtAll(h.feed(noteOn(72, 90)))).toEqual([]);
+  });
+
+  it("re-plays a folded note on every hit and still stops on the last release", () => {
+    resetClock();
+    const h = harness(folded(true));
+    expect(fmtAll(h.feed(noteOn(48, 100)))).toEqual(["on:ch0:60@100"]);
+    expect(fmtAll(h.feed(noteOn(72, 90)))).toEqual(["off:ch0:60", "on:ch0:60@90"]);
+    expect(fmtAll(h.feed(noteOff(48)))).toEqual([]);
+    expect(fmtAll(h.feed(noteOff(72)))).toEqual(["off:ch0:60"]);
+  });
+
+  it("re-plays when a key held with others is struck again", () => {
+    resetClock();
+    const h = harness(folded(true));
+    h.feed(noteOn(48, 100));
+    h.feed(noteOn(72, 90));
+    expect(fmtAll(h.feed(noteOn(48, 70)))).toEqual(["off:ch0:60", "on:ch0:60@70"]);
+    expect(fmtAll(h.feed(noteOff(48)))).toEqual([]);
+    expect(fmtAll(h.feed(noteOff(72)))).toEqual(["off:ch0:60"]);
+  });
+
+  it("round-trips through the preset schema", () => {
+    const cfg = kbm({ mode: "identity" }, [dflt({})], { retrigger: true });
+    expect(transformConfigSchema.parse(cfg)).toEqual(cfg);
   });
 });

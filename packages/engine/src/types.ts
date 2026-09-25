@@ -188,6 +188,12 @@ export type TransformConfig =
       channels?: Channel[];
       partition: Partition;
       layers: Layer[];
+      /**
+       * When a key maps onto an output note that is already sounding (folded
+       * notes, e.g. every C -> C4), re-play it: note-off then note-on with the
+       * new velocity. Off (default): the note keeps sounding, nothing is sent.
+       */
+      retrigger?: boolean;
     })
   | (TransformCommon & {
       type: "combo";

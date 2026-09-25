@@ -115,6 +115,7 @@ export const transformConfigSchema = z.discriminatedUnion("type", [
     channels: z.array(channel).optional(),
     partition: partitionSchema,
     layers: z.array(layerSchema),
+    retrigger: z.boolean().optional(),
   }),
   z.object({
     ...common,

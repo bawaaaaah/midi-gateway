@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Layer, OutputSpec, Partition, TransformConfig } from "@midi-gateway/engine";
 import { noteName, parseNoteName } from "@midi-gateway/engine";
-import { Btn, DraftTextField, Field, NoteField, NumberField, Segmented, Tag } from "../../components/ui.js";
+import { Btn, DraftTextField, Field, NoteField, NumberField, Segmented, Tag, Toggle } from "../../components/ui.js";
 import { OutputSpecEditor } from "./OutputSpecEditor.js";
 
 type Cfg = Extract<TransformConfig, { type: "keyboardMapper" }>;
@@ -249,6 +249,17 @@ export function KeyboardMapperEditor({ config, onChange }: { config: Cfg; onChan
   return (
     <div className="flex flex-col gap-3">
       <PartitionEditor partition={config.partition} onChange={(partition) => onChange({ ...config, partition })} />
+
+      <Field
+        label="Retrigger"
+        hint="When a key lands on a note that is already sounding (folded notes), play it again instead of ignoring the hit"
+      >
+        <Toggle
+          checked={config.retrigger ?? false}
+          onChange={(retrigger) => onChange({ ...config, retrigger: retrigger || undefined })}
+          label="re-play folded notes"
+        />
+      </Field>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
