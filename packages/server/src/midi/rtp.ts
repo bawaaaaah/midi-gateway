@@ -14,8 +14,8 @@ export interface DiscoveredSession {
 export interface RtpPortHandle {
   onMessage(cb: (bytes: number[]) => void): void;
   send(bytes: number[]): void;
-  connect(host: string, port: number): void;
-  disconnect(): void;
+  /** At least one remote peer is connected to the session. */
+  hasPeer(): boolean;
   close(): void;
 }
 
@@ -43,10 +43,16 @@ export async function createRtpBackend(opts: { bonjour: boolean }): Promise<RtpB
 interface RtpSession {
   name: string;
   port: number;
-  sendMessage(dt: number, bytes: number[]): void;
+  /**
+   * With a single argument the library stamps the message with its own clock.
+   * (The two-argument form expects an absolute timestamp in its internal units.)
+   */
+  sendMessage(bytes: number[]): void;
   connect(o: { address: string; port: number }): void;
+  getStreams(): unknown[];
   end(): void;
   on(ev: "message", cb: (dt: number, msg: number[]) => void): void;
+  on(ev: "error", cb: (err: Error) => void): void;
 }
 interface RtpManager {
   createSession(o: { localName: string; bonjourName: string; port: number; published: boolean }): RtpSession;
@@ -60,7 +66,10 @@ class RealRtpBackend implements RtpBackend {
   private seen = new Map<string, DiscoveredSession>();
   private discoveryCbs: (() => void)[] = [];
 
-  constructor(private manager: RtpManager, bonjour: boolean) {
+  constructor(
+    private manager: RtpManager,
+    private bonjour: boolean,
+  ) {
     if (bonjour) {
       try {
         this.manager.startDiscovery();
@@ -83,23 +92,35 @@ class RealRtpBackend implements RtpBackend {
       localName: cfg.sessionName,
       bonjourName: cfg.sessionName,
       port: cfg.localPort,
-      published: true,
+      published: this.bonjour,
+    });
+    // UDP socket errors (e.g. EADDRINUSE) are re-emitted as "error" on the
+    // session; without a listener Node would throw and kill the gateway.
+    session.on("error", (err) => {
+      console.warn(`[rtp] session "${cfg.sessionName}" (udp ${cfg.localPort}): ${err.message}`);
     });
     if (cfg.mode === "initiator" && cfg.remoteHost && cfg.remotePort) {
-      session.connect({ address: cfg.remoteHost, port: cfg.remotePort });
+      try {
+        session.connect({ address: cfg.remoteHost, port: cfg.remotePort });
+      } catch (err) {
+        console.warn(`[rtp] connect to ${cfg.remoteHost}:${cfg.remotePort} failed: ${(err as Error).message}`);
+      }
     }
     return {
-      onMessage: (cb) => session.on("message", (_dt, msg) => cb(msg)),
+      onMessage: (cb) => session.on("message", (_dt, msg) => cb(Array.from(msg))),
       send: (bytes) => {
         try {
-          session.sendMessage(0, bytes);
+          session.sendMessage(bytes);
         } catch {
           /* no peer */
         }
       },
-      connect: (address, port) => session.connect({ address, port }),
-      disconnect: () => {
-        /* fork lacks a per-peer disconnect; recreate the session to drop peers */
+      hasPeer: () => {
+        try {
+          return session.getStreams().length > 0;
+        } catch {
+          return false;
+        }
       },
       close: () => {
         try {
@@ -127,8 +148,7 @@ class NullRtpBackend implements RtpBackend {
     return {
       onMessage: () => {},
       send: () => {},
-      connect: () => {},
-      disconnect: () => {},
+      hasPeer: () => false,
       close: () => {},
     };
   }

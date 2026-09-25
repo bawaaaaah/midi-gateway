@@ -26,7 +26,10 @@ export interface RuntimePort extends Port {
 }
 
 export interface PresetSummary {
+  /** Identifier used by every preset command: the file name without `.json`. */
   name: string;
+  /** The `name` stored inside the preset (what the user sees; may differ from the file name). */
+  title: string;
   file: string;
   updatedAt: number;
   routeCount: number;
@@ -41,6 +44,7 @@ export interface DiscoveredRtpSession {
 export interface GatewayState {
   serverVersion: string;
   presetsDir: string;
+  /** File name (without `.json`) the active preset is saved to; null if it has no file yet. */
   activePresetName: string | null;
   /** Unsaved changes since the last load/save. */
   dirty: boolean;
@@ -53,6 +57,8 @@ export interface GatewayState {
   availableOutputs: string[];
   discoveredRtp: DiscoveredRtpSession[];
   rtpAvailable: boolean;
+  /** First UDP port suggested for new RTP sessions (config `rtp.basePort`). */
+  rtpBasePort: number;
   midiBackend: "rtmidi" | "null";
 }
 
@@ -119,7 +125,7 @@ export const commandSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("deletePort"), portId: id }),
   z.object({ kind: z.literal("createRtpSession"), name: z.string().min(1), config: rtpSessionConfigSchema }),
-  z.object({ kind: z.literal("rtpConnect"), portId: id, host: z.string().min(1), port: z.number().int() }),
+  z.object({ kind: z.literal("rtpConnect"), portId: id, host: z.string().min(1), port: z.number().int().min(1).max(65535) }),
   z.object({ kind: z.literal("rtpDisconnect"), portId: id }),
 
   // routes
@@ -148,7 +154,8 @@ export const commandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("savePreset"), name: z.string().optional() }),
   z.object({ kind: z.literal("loadPreset"), name: z.string().min(1) }),
   z.object({ kind: z.literal("newPreset"), name: z.string().min(1) }),
-  z.object({ kind: z.literal("duplicatePreset"), from: z.string().min(1), to: z.string().min(1) }),
+  /** Copy preset file `from` to a new file `to`; without `from`, copy the current (possibly unsaved) preset. */
+  z.object({ kind: z.literal("duplicatePreset"), from: z.string().min(1).optional(), to: z.string().min(1) }),
   z.object({ kind: z.literal("deletePreset"), name: z.string().min(1) }),
   z.object({ kind: z.literal("revealPresets") }),
 

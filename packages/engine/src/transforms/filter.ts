@@ -26,15 +26,36 @@ function matches(ev: MidiEvent, m: FilterMatch): boolean {
  * `action: "drop"` removes matching events; `action: "keep"` removes everything
  * that does *not* match (a whitelist). Non-note events that don't carry the
  * matched fields are treated as "not matching".
+ *
+ * Note-offs always follow the fate of their note-on: a note-off is passed iff
+ * the note-on it closes was passed, whatever the match says. Otherwise a
+ * velocity window (which only applies to note-ons) or a "keep noteOn" rule
+ * would drop the note-off of a note that was let through -> stuck note.
  */
 export function createFilter(cfg: Cfg): Transform {
+  /** `channel:note` -> whether the held note-on was passed. */
+  const held = new Map<string, boolean>();
+
   return {
     id: cfg.id,
     type: cfg.type,
     process(ev: MidiEvent): MidiEvent[] {
+      if (ev.kind === "noteOff") {
+        const k = `${ev.channel}:${ev.note}`;
+        const passedOn = held.get(k);
+        if (passedOn !== undefined) {
+          held.delete(k);
+          return passedOn ? [ev] : [];
+        }
+      }
       const hit = matches(ev, cfg.match);
       const pass = cfg.action === "drop" ? !hit : hit;
+      if (ev.kind === "noteOn") held.set(`${ev.channel}:${ev.note}`, pass);
       return pass ? [ev] : [];
+    },
+    flush(): MidiEvent[] {
+      held.clear();
+      return [];
     },
   };
 }

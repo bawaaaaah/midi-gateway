@@ -18,7 +18,8 @@ Built for two jobs:
     pedal, sustain…) is pressed. **Combines** with both modes above.
 
 Presets are plain **`.json` files in a folder** (`~/midi-gateway/presets/` by
-default). No database.
+default). No database. A preset is identified by its file name; the name shown
+in the UI is stored inside the file and can be changed without moving it.
 
 ---
 
@@ -33,7 +34,7 @@ npm run dev
   **:4666**.
 - `npm run build && npm start` runs the gateway alone on **:4666**, serving the
   built UI.
-- Tests: `npm test` (engine unit tests, `vitest`).
+- Tests: `npm test` (engine + server unit tests, `vitest`).
 
 On first run the server creates `~/midi-gateway/` with `config.json` and a
 `presets/` folder, and opens a `Default` preset.
@@ -55,7 +56,12 @@ Port ──┘   (ordered chain)      └── Port
 - **Port** — a hardware in/out, a virtual in/out, or a bidirectional RTP session.
   Rename freely; the name is stored in the preset.
 - **Route** — one or more source ports → an ordered list of transforms → one or
-  more destination ports.
+  more destination ports. The gateway remembers which notes each route has
+  sounding: disabling or editing a route, removing one of its ports, loading
+  another preset or quitting sends the matching note-offs, so nothing is left
+  stuck.
+- Hardware ports are re-opened automatically when their device is plugged back
+  in.
 - **Transform** — a pure function `event → event[]`. Chainable, reorderable,
   individually enable/disable.
 
@@ -70,7 +76,7 @@ Port ──┘   (ordered chain)      └── Port
 | Channel remap | move events between channels |
 | CC remap | CC → CC, CC → note, or drop |
 | Filter | drop or keep events by type / note range / channel |
-| Learn tap | feed the Learn table from this point in the chain |
+| Learn tap | when learning *this route*, feed the Learn table from this point in the chain |
 
 ### Keyboard mapper
 
@@ -86,7 +92,11 @@ Each incoming note is resolved in three steps:
    channel and velocity.
 
 Folded notes are reference‑counted and note‑offs replay the *exact* output the
-note‑on produced, so changing a pedal mid‑note never leaves a stuck note.
+note‑on produced, so changing a pedal mid‑note never leaves a stuck note. By
+default a key that lands on a note already sounding (e.g. C3 while C2 holds the
+shared C4) is silent; turn on **Retrigger** to re‑play the note (note‑off +
+note‑on with the new velocity) on every hit. It still stops only when the last
+key is released.
 
 | You want | Set up |
 |---|---|
@@ -102,6 +112,9 @@ note‑on produced, so changing a pedal mid‑note never leaves a stuck note.
 1. **Learn → Start**, play your controller. Every event is captured, de‑duplicated
    by signature, and shown live with count, velocity range, and — for note hits —
    which CCs were active during the strike (the *hi‑hat pedal* hint).
+   *All inputs* records what every input port receives (routed or not); picking a
+   route records at that route's **Learn tap** if it has one, otherwise what
+   enters the route.
 2. Rename notes inline, or **Name as GM drums**.
 3. Select rows → **→ Keyboard mapper**, **→ Hi‑hat by pedal**, or **→ Combo** to
    drop a pre‑filled transform onto a route. Fine‑tune it in the Routes tab.
@@ -141,8 +154,8 @@ apps/web          React + Vite + Tailwind UI. Zustand store fed by the WebSocket
 | `npm run dev` | engine watch + server (tsx) + web (vite), all together |
 | `npm run build` | build engine → web → server |
 | `npm start` | run the built server (serves the built UI on `:4666`) |
-| `npm test` | engine unit tests |
-| `npm run typecheck` | `tsc -b` across all packages |
+| `npm test` | engine + server unit tests |
+| `npm run typecheck` | type-check every package (engine, server, web) |
 
 ## Configuration
 
@@ -150,13 +163,21 @@ apps/web          React + Vite + Tailwind UI. Zustand store fed by the WebSocket
 
 ```jsonc
 {
-  "presetsDir": "/Users/you/midi-gateway/presets",
-  "activePreset": "Default",
+  "presetsDir": "/Users/you/midi-gateway/presets",   // "~/..." works too
+  "activePreset": "Default",  // preset file (without .json) re-opened on start; updated as you load/save
   "httpPort": 4666,
   "host": "127.0.0.1",       // "0.0.0.0" to reach the UI from the LAN
-  "rtp": { "basePort": 5004, "bonjour": true }
+  "rtp": { "basePort": 5004, "bonjour": true }   // bonjour: advertise + discover sessions over mDNS
 }
 ```
+
+If the file is not valid JSON the gateway starts on defaults and leaves it
+untouched (a warning says why).
+
+> **Security**: the UI has no login. The WebSocket only accepts same‑origin
+> browser connections (so other web pages can't drive the gateway), but with
+> `"host": "0.0.0.0"` anyone on your network who can reach the port has full
+> control. Only do that on a trusted network.
 
 Example presets are in [`examples/`](examples/) — copy them into your `presetsDir`
 to try them.

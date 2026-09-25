@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import type { Layer, OutputSpec, Partition, TransformConfig } from "@midi-gateway/engine";
-import { noteName } from "@midi-gateway/engine";
-import { Btn, Field, NoteField, NumberField, Segmented, Select, Tag, TextField } from "../../components/ui.js";
+import { noteName, parseNoteName } from "@midi-gateway/engine";
+import { Btn, DraftTextField, Field, NoteField, NumberField, Segmented, Tag, Toggle } from "../../components/ui.js";
 import { OutputSpecEditor } from "./OutputSpecEditor.js";
 
 type Cfg = Extract<TransformConfig, { type: "keyboardMapper" }>;
@@ -11,6 +11,16 @@ const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`;
 interface Bucket {
   id: string;
   label: string;
+}
+
+/** "46, 42 C1 f#2" -> [46, 42, 24, 42]: numbers or note names, deduplicated, invalid tokens ignored. */
+function parseNoteList(raw: string): number[] {
+  const notes = raw
+    .split(/[,;\s]+/)
+    .filter(Boolean)
+    .map((tok) => (/^\d+$/.test(tok) ? Number(tok) : parseNoteName(tok)))
+    .filter((n): n is number => n !== null && n >= 0 && n <= 127);
+  return [...new Set(notes)];
 }
 
 export function bucketsForPartition(p: Partition): Bucket[] {
@@ -105,14 +115,11 @@ function PartitionEditor({ partition, onChange }: { partition: Partition; onChan
           {partition.groups.map((g, i) => (
             <div key={g.id} className="flex items-center gap-2">
               <span className="w-14 text-[11px] text-muted">Group {i + 1}</span>
-              <TextField
+              <DraftTextField
                 value={g.notes.join(", ")}
                 placeholder="46, 42  or  C1, D1"
-                onChange={(raw) => {
-                  const notes = raw
-                    .split(/[,\s]+/)
-                    .map((s) => Number(s.trim()))
-                    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 127);
+                onCommit={(raw) => {
+                  const notes = parseNoteList(raw);
                   onChange({ ...partition, groups: partition.groups.map((x) => (x.id === g.id ? { ...x, notes } : x)) });
                 }}
               />
@@ -242,6 +249,17 @@ export function KeyboardMapperEditor({ config, onChange }: { config: Cfg; onChan
   return (
     <div className="flex flex-col gap-3">
       <PartitionEditor partition={config.partition} onChange={(partition) => onChange({ ...config, partition })} />
+
+      <Field
+        label="Retrigger"
+        hint="When a key lands on a note that is already sounding (folded notes), play it again instead of ignoring the hit"
+      >
+        <Toggle
+          checked={config.retrigger ?? false}
+          onChange={(retrigger) => onChange({ ...config, retrigger: retrigger || undefined })}
+          label="re-play folded notes"
+        />
+      </Field>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">

@@ -21,7 +21,9 @@ interface AppStore {
   learn: LearnObservation[];
   lastError: string | null;
 
-  send(cmd: Command): Promise<void>;
+  /** Never rejects: failures land in `lastError` and resolve to false. */
+  send(cmd: Command): Promise<boolean>;
+  clearError(): void;
   setMonitorPaused(v: boolean): void;
   clearMonitor(): void;
   setSubscription(channels: ("monitor" | "activity" | "learn")[], f?: MonitorFilter): void;
@@ -41,11 +43,13 @@ export const useStore = create<AppStore>((set, get) => ({
     try {
       await gateway.send(cmd);
       set({ lastError: null });
+      return true;
     } catch (e) {
       set({ lastError: (e as Error).message });
-      throw e;
+      return false;
     }
   },
+  clearError: () => set({ lastError: null }),
   setMonitorPaused: (v) => set({ monitorPaused: v }),
   clearMonitor: () => set({ monitor: [] }),
   setSubscription: (channels, f) => gateway.setSubscription(channels, f),

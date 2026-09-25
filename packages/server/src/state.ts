@@ -81,6 +81,11 @@ export class GatewayStore extends EventEmitter {
         return ok();
       }
       case "createRtpSession": {
+        // Each session binds localPort (control) and localPort + 1 (data).
+        const clash = this.preset.ports.find(
+          (p) => p.rtp && Math.abs(p.rtp.localPort - cmd.config.localPort) < 2,
+        );
+        if (clash) return fail(`UDP ports ${cmd.config.localPort}-${cmd.config.localPort + 1} overlap "${clash.name}"`);
         this.preset.ports.push({ id: uid("rtp"), name: cmd.name, kind: "rtp", rtp: cmd.config });
         this.touched();
         return ok();
@@ -180,9 +185,11 @@ export class GatewayStore extends EventEmitter {
         return ok();
       }
       case "bulkSetNoteNames": {
-        for (const [note, name] of Object.entries(cmd.names)) {
-          if (name.trim()) this.preset.noteNames[Number(note)] = name;
-          else delete this.preset.noteNames[Number(note)];
+        for (const [key, name] of Object.entries(cmd.names)) {
+          const note = Number(key);
+          if (!Number.isInteger(note) || note < 0 || note > 127) continue;
+          if (name.trim()) this.preset.noteNames[note] = name;
+          else delete this.preset.noteNames[note];
         }
         this.touched();
         return ok();

@@ -32,7 +32,11 @@ export async function createBackend(): Promise<MidiBackend> {
   try {
     const mod = await import("@julusian/midi");
     const m = (mod as { default?: unknown }).default ?? mod;
-    return new RtMidiBackend(m as RtMidiModule);
+    const backend = new RtMidiBackend(m as RtMidiModule);
+    // The module can load while the OS MIDI service can't be opened (e.g. Linux
+    // without /dev/snd/seq). RtMidi then throws on every call - probe once now.
+    backend.probe();
+    return backend;
   } catch (err) {
     console.warn(
       `[midi] @julusian/midi unavailable - running without hardware/virtual MIDI. (${(err as Error).message})`,
@@ -51,6 +55,8 @@ interface RtInput {
   openPort(i: number): void;
   openVirtualPort(name: string): void;
   closePort(): void;
+  /** Frees the native RtMidi instance (@julusian/midi >= 3). */
+  destroy?(): void;
   ignoreTypes(sysex: boolean, timing: boolean, activeSensing: boolean): void;
   on(event: "message", cb: (deltaTime: number, message: number[]) => void): void;
 }
@@ -60,11 +66,26 @@ interface RtOutput {
   openPort(i: number): void;
   openVirtualPort(name: string): void;
   closePort(): void;
+  destroy?(): void;
   sendMessage(bytes: number[]): void;
 }
 interface RtMidiModule {
-  Input: new () => RtInput;
-  Output: new () => RtOutput;
+  Input: (new () => RtInput) & { getPortNames?(): string[] };
+  Output: (new () => RtOutput) & { getPortNames?(): string[] };
+}
+
+/** Close and free a native RtMidi instance; each one holds an OS MIDI client. */
+function release(h: { closePort(): void; destroy?(): void }): void {
+  try {
+    h.closePort();
+  } catch {
+    /* not open / already closed */
+  }
+  try {
+    h.destroy?.();
+  } catch {
+    /* already destroyed */
+  }
 }
 
 function findPort(count: number, nameAt: (i: number) => string, wanted: string): number {
@@ -77,47 +98,95 @@ class RtMidiBackend implements MidiBackend {
   readonly kind = "rtmidi" as const;
   constructor(private m: RtMidiModule) {}
 
-  private enumerate(make: () => { getPortCount(): number; getPortName(i: number): string }): string[] {
+  /** Throws if RtMidi can't talk to the OS MIDI service. */
+  probe(): void {
+    this.enumerate(this.m.Input, () => new this.m.Input());
+  }
+
+  private enumerate(
+    cls: { getPortNames?(): string[] },
+    make: () => { getPortCount(): number; getPortName(i: number): string; closePort(): void; destroy?(): void },
+  ): string[] {
+    // Prefer the static helper: no RtMidi client is created per call.
+    if (cls.getPortNames) return cls.getPortNames();
     const probe = make();
-    const names: string[] = [];
-    for (let i = 0; i < probe.getPortCount(); i++) names.push(probe.getPortName(i));
-    return names;
+    try {
+      const names: string[] = [];
+      for (let i = 0; i < probe.getPortCount(); i++) names.push(probe.getPortName(i));
+      return names;
+    } finally {
+      release(probe);
+    }
   }
 
   listInputs(): string[] {
-    return this.enumerate(() => new this.m.Input());
+    try {
+      return this.enumerate(this.m.Input, () => new this.m.Input());
+    } catch {
+      return [];
+    }
   }
   listOutputs(): string[] {
-    return this.enumerate(() => new this.m.Output());
+    try {
+      return this.enumerate(this.m.Output, () => new this.m.Output());
+    } catch {
+      return [];
+    }
   }
 
   openInput(systemName: string): RawInput | null {
     const inp = new this.m.Input();
-    const idx = findPort(inp.getPortCount(), (i) => inp.getPortName(i), systemName);
-    if (idx < 0) return null;
-    inp.ignoreTypes(false, true, true); // pass sysex, drop timing + active-sensing
-    inp.openPort(idx);
+    try {
+      const idx = findPort(inp.getPortCount(), (i) => inp.getPortName(i), systemName);
+      if (idx < 0) {
+        release(inp);
+        return null;
+      }
+      inp.ignoreTypes(false, true, true); // pass sysex, drop timing + active-sensing
+      inp.openPort(idx);
+    } catch (err) {
+      release(inp);
+      throw err;
+    }
     return this.wrapInput(inp, systemName);
   }
 
   openOutput(systemName: string): RawOutput | null {
     const out = new this.m.Output();
-    const idx = findPort(out.getPortCount(), (i) => out.getPortName(i), systemName);
-    if (idx < 0) return null;
-    out.openPort(idx);
+    try {
+      const idx = findPort(out.getPortCount(), (i) => out.getPortName(i), systemName);
+      if (idx < 0) {
+        release(out);
+        return null;
+      }
+      out.openPort(idx);
+    } catch (err) {
+      release(out);
+      throw err;
+    }
     return this.wrapOutput(out, systemName);
   }
 
   openVirtualInput(name: string): RawInput {
     const inp = new this.m.Input();
-    inp.ignoreTypes(false, true, true);
-    inp.openVirtualPort(name);
+    try {
+      inp.ignoreTypes(false, true, true);
+      inp.openVirtualPort(name);
+    } catch (err) {
+      release(inp);
+      throw err;
+    }
     return this.wrapInput(inp, name);
   }
 
   openVirtualOutput(name: string): RawOutput {
     const out = new this.m.Output();
-    out.openVirtualPort(name);
+    try {
+      out.openVirtualPort(name);
+    } catch (err) {
+      release(out);
+      throw err;
+    }
     return this.wrapOutput(out, name);
   }
 
@@ -129,13 +198,7 @@ class RtMidiBackend implements MidiBackend {
     return {
       name,
       onMessage: (cb) => inp.on("message", (_dt, message) => cb(message)),
-      close: () => {
-        try {
-          inp.closePort();
-        } catch {
-          /* already closed */
-        }
-      },
+      close: () => release(inp),
     };
   }
 
@@ -149,13 +212,7 @@ class RtMidiBackend implements MidiBackend {
           /* port went away */
         }
       },
-      close: () => {
-        try {
-          out.closePort();
-        } catch {
-          /* already closed */
-        }
-      },
+      close: () => release(out),
     };
   }
 }
