@@ -38,7 +38,7 @@ function hostnameOf(host: string): string {
  * which also defeats DNS rebinding.
  */
 function isAllowedClient(req: IncomingMessage, origin: string | undefined, bindHost: string): boolean {
-  const host = req.headers.host ?? "";
+  const host = (req.headers.host ?? "").toLowerCase();
   if (LOOPBACK_HOST.test(bindHost) && !LOOPBACK_HOST.test(hostnameOf(host))) return false;
   if (!origin) return true;
   try {
@@ -121,6 +121,7 @@ export function attachWebSocket(deps: WsDeps) {
       availableOutputs: unconfigured.outputs,
       discoveredRtp: registry.discoveredRtp(),
       rtpAvailable: registry.rtpAvailable,
+      rtpBasePort: config.rtp.basePort,
       midiBackend: registry.backendKind === "null" ? "null" : "rtmidi",
     };
   }

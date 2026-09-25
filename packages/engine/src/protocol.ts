@@ -57,6 +57,8 @@ export interface GatewayState {
   availableOutputs: string[];
   discoveredRtp: DiscoveredRtpSession[];
   rtpAvailable: boolean;
+  /** First UDP port suggested for new RTP sessions (config `rtp.basePort`). */
+  rtpBasePort: number;
   midiBackend: "rtmidi" | "null";
 }
 

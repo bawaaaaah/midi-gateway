@@ -12,7 +12,7 @@ export interface ServerConfig {
   /** Bind address. 127.0.0.1 keeps it local; 0.0.0.0 exposes it on the LAN. */
   host: string;
   rtp: {
-    /** Base UDP control port for new sessions; each session takes base + 2*n. */
+    /** First UDP control port suggested for new sessions; each session takes a port pair. */
     basePort: number;
     /** Advertise sessions over Bonjour/mDNS. */
     bonjour: boolean;

@@ -17,7 +17,7 @@
     "build": "npm -w @midi-gateway/engine run build && npm -w @midi-gateway/web run build && npm -w @midi-gateway/server run build",
     "start": "npm -w @midi-gateway/server run start",
     "test": "npm -w @midi-gateway/engine run test && npm -w @midi-gateway/server run test",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b && tsc -p apps/web/tsconfig.json"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

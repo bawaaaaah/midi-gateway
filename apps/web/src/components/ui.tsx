@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { noteName, parseNoteName } from "@midi-gateway/engine";
 
 export function Panel({ title, right, children, className = "" }: {
@@ -54,13 +54,14 @@ export function Btn({
 }
 
 export function Field({ label, children, hint }: { label: ReactNode; children: ReactNode; hint?: ReactNode }) {
-  const id = useId();
+  // A plain <div>, not a <label>: several fields hold buttons (Segmented, Toggle),
+  // and a label click would activate the first one.
   return (
-    <label htmlFor={id} className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1">
       <span className="text-[11px] uppercase tracking-wide text-muted">{label}</span>
-      <div id={id}>{children}</div>
+      <div>{children}</div>
       {hint && <span className="text-[11px] text-muted">{hint}</span>}
-    </label>
+    </div>
   );
 }
 
@@ -84,6 +85,47 @@ export function TextField({ value, onChange, placeholder, onBlur }: {
   );
 }
 
+/**
+ * Text input bound to a server value that only reports the edit on blur / Enter
+ * (Escape reverts). Typing never round-trips through the server, so keystrokes
+ * can't be lost or reordered, and clearing the field to retype is possible.
+ */
+export function DraftTextField({ value, onCommit, placeholder, allowEmpty = true, className = inputCls }: {
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  /** When false, an empty / blank value is discarded instead of committed. */
+  allowEmpty?: boolean;
+  className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null); // null = not editing
+  const cancelled = useRef(false);
+  return (
+    <input
+      className={className}
+      value={draft ?? value}
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={(e) => {
+        const v = e.currentTarget.value;
+        setDraft(null);
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
+        if (v !== value && (allowEmpty || v.trim())) onCommit(v);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 export function NumberField({ value, onChange, min, max, step = 1, suffix }: {
   value: number;
   onChange: (v: number) => void;
@@ -92,19 +134,28 @@ export function NumberField({ value, onChange, min, max, step = 1, suffix }: {
   step?: number;
   suffix?: string;
 }) {
+  // What the user is typing; lets them clear the field or type "-" without it
+  // snapping back to a number on every keystroke.
+  const [text, setText] = useState<string | null>(null);
+  const integer = Number.isInteger(step);
   return (
     <span className="flex items-center gap-1">
       <input
         type="number"
         className={inputCls}
-        value={Number.isFinite(value) ? value : 0}
+        value={text ?? (Number.isFinite(value) ? value : 0)}
         min={min}
         max={max}
         step={step}
         onChange={(e) => {
+          setText(e.target.value);
+          if (e.target.value.trim() === "") return;
           const n = Number(e.target.value);
-          if (!Number.isNaN(n)) onChange(clamp(n, min, max));
+          if (!Number.isFinite(n)) return;
+          const v = clamp(integer ? Math.round(n) : n, min, max);
+          if (v !== value) onChange(v);
         }}
+        onBlur={() => setText(null)}
       />
       {suffix && <span className="text-[11px] text-muted">{suffix}</span>}
     </span>
@@ -178,26 +229,20 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
 }
 
 export function NoteField({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  // Partial names ("D", "F#") don't parse yet: keep them as typed until they do.
+  const [name, setName] = useState<string | null>(null);
   return (
     <span className="flex items-center gap-1">
-      <input
-        type="number"
-        className={inputCls}
-        min={0}
-        max={127}
-        value={value}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          if (!Number.isNaN(n)) onChange(clamp(n, 0, 127));
-        }}
-      />
+      <NumberField value={value} min={0} max={127} onChange={onChange} />
       <input
         className={`${inputCls} !w-16 text-center`}
-        value={noteName(value)}
+        value={name ?? noteName(value)}
         onChange={(e) => {
+          setName(e.target.value);
           const n = parseNoteName(e.target.value);
-          if (n !== null) onChange(n);
+          if (n !== null && n !== value) onChange(n);
         }}
+        onBlur={() => setName(null)}
         title="Note name (C4 = 60)"
       />
     </span>

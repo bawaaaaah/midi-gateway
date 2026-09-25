@@ -73,13 +73,14 @@ export function VelocityEditor({
             if (mode === "passthrough") onChange({ ...config, spec: { mode: "passthrough" } });
             else if (mode === "fixed") onChange({ ...config, spec: { mode: "fixed", value: 100 } });
             else if (mode === "scale") onChange({ ...config, spec: { mode: "scale", min: 1, max: 127 } });
-            else onChange({ ...config, spec: { mode: "curve", shape: "sCurve", amount: 0.5 } });
+            else if (mode === "curve") onChange({ ...config, spec: { mode: "curve", shape: "sCurve", amount: 0.5 } });
           }}
           options={[
             { value: "passthrough", label: "passthrough" },
             { value: "fixed", label: "fixed" },
             { value: "scale", label: "scale" },
             { value: "curve", label: "curve" },
+            ...(spec.mode === "points" ? [{ value: "points" as const, label: "points (from file)" }] : []),
           ]}
         />
       </Field>

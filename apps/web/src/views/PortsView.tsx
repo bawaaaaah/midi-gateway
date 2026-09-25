@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { RuntimePort } from "@midi-gateway/engine";
 import { useStore } from "../store.js";
 import { usePortLevel } from "../lib/activity.js";
 import { ActivityLed } from "../components/ActivityLed.js";
-import { Btn, Empty, Field, Panel, Segmented, Tag, TextField, NumberField } from "../components/ui.js";
+import { Btn, DraftTextField, Empty, Field, Panel, Segmented, Tag, TextField, NumberField } from "../components/ui.js";
 
 const kindLabel: Record<RuntimePort["kind"], string> = {
   "hw-in": "Hardware in",
@@ -16,23 +16,24 @@ const kindLabel: Record<RuntimePort["kind"], string> = {
 function PortRow({ port }: { port: RuntimePort }) {
   const send = useStore((s) => s.send);
   const level = usePortLevel(port.id);
-  const [name, setName] = useState(port.name);
 
   return (
     <div className="flex items-center gap-3 rounded-md border border-line bg-panel-2 px-3 py-2">
       <ActivityLed level={level} connected={port.connected} />
-      <input
+      <DraftTextField
         className="w-52 rounded border border-transparent bg-transparent px-1 py-0.5 text-[13px] font-medium text-ink hover:border-line focus:border-accent focus:outline-none"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={() => name.trim() && name !== port.name && send({ kind: "renamePort", portId: port.id, name: name.trim() })}
+        value={port.name}
+        allowEmpty={false}
+        onCommit={(name) => send({ kind: "renamePort", portId: port.id, name: name.trim() })}
       />
       <Tag tone="muted">{kindLabel[port.kind]}</Tag>
       <Tag tone={port.direction === "bidir" ? "accent" : "muted"}>{port.direction}</Tag>
-      {port.available ? (
-        <Tag tone="good">connected</Tag>
-      ) : (
+      {!port.available ? (
         <Tag tone="warn">offline</Tag>
+      ) : port.kind === "rtp" && !port.connected ? (
+        <Tag tone="muted">waiting for peer</Tag>
+      ) : (
+        <Tag tone="good">connected</Tag>
       )}
       {port.rtp && (
         <span className="text-[11px] text-muted">
@@ -40,7 +41,11 @@ function PortRow({ port }: { port: RuntimePort }) {
           {port.rtp.remoteHost ? ` → ${port.rtp.remoteHost}:${port.rtp.remotePort}` : ""}
         </span>
       )}
-      <Btn size="sm" variant="ghost" onClick={() => send({ kind: "deletePort", portId: port.id })}>
+      <Btn
+        size="sm"
+        variant="ghost"
+        onClick={() => window.confirm(`Remove "${port.name}"? Routes using it will lose it.`) && send({ kind: "deletePort", portId: port.id })}
+      >
         Remove
       </Btn>
     </div>
@@ -116,12 +121,24 @@ function AddHardware() {
   );
 }
 
+/** Each RTP session binds its port and port + 1: suggest the first free pair from `base`. */
+function nextFreeRtpPort(ports: RuntimePort[], base: number): number {
+  const used = ports.flatMap((p) => (p.rtp ? [p.rtp.localPort] : []));
+  let port = base;
+  while (used.some((u) => Math.abs(u - port) < 2)) port += 2;
+  return port;
+}
+
 function AddRtp() {
   const send = useStore((s) => s.send);
   const rtpAvailable = useStore((s) => s.gs?.rtpAvailable ?? false);
   const discovered = useStore((s) => s.gs?.discoveredRtp ?? []);
+  const ports = useStore((s) => s.gs?.ports);
+  const basePort = useStore((s) => s.gs?.rtpBasePort ?? 5004);
+  const suggestedPort = useMemo(() => nextFreeRtpPort(ports ?? [], basePort), [ports, basePort]);
   const [name, setName] = useState("Gateway");
-  const [port, setPort] = useState(5004);
+  const [chosenPort, setPort] = useState<number | null>(null); // null = use the suggestion
+  const port = chosenPort ?? suggestedPort;
   const [mode, setMode] = useState<"listener" | "initiator">("listener");
   const [host, setHost] = useState("");
   const [rport, setRport] = useState(5004);
@@ -135,7 +152,7 @@ function AddRtp() {
           <TextField value={name} onChange={setName} />
         </Field>
         <Field label="Local port">
-          <NumberField value={port} onChange={setPort} min={1} max={65535} />
+          <NumberField value={port} onChange={setPort} min={1} max={65534} />
         </Field>
         <Field label="Mode">
           <Segmented
@@ -159,19 +176,20 @@ function AddRtp() {
         )}
         <Btn
           variant="primary"
-          onClick={() =>
-            send({
+          onClick={async () => {
+            const ok = await send({
               kind: "createRtpSession",
               name: name.trim(),
               config: {
                 sessionName: name.trim(),
                 localPort: port,
                 mode,
-                remoteHost: mode === "initiator" ? host : undefined,
+                remoteHost: mode === "initiator" ? host.trim() || undefined : undefined,
                 remotePort: mode === "initiator" ? rport : undefined,
               },
-            })
-          }
+            });
+            if (ok) setPort(null); // next session gets the next free port
+          }}
         >
           Create RTP session
         </Btn>

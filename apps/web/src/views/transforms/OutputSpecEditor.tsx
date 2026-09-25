@@ -39,6 +39,8 @@ function VelocityMini({ value, onChange }: { value: VelocitySpec | undefined; on
           { value: "fixed", label: "vel: fixed" },
           { value: "scale", label: "vel: scale" },
           { value: "curve", label: "vel: curve" },
+          // Breakpoint curves come from preset files; show them instead of a wrong mode.
+          ...(mode === "points" ? [{ value: "points" as const, label: "vel: points" }] : []),
         ]}
       />
       {value?.mode === "fixed" && (

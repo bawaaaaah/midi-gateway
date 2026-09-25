@@ -8,7 +8,7 @@ import {
 } from "@midi-gateway/engine";
 import { useStore } from "../store.js";
 import { useMergedInputActivity } from "../lib/activity.js";
-import { Btn, Empty, Field, Panel, Select, Tag, TextField } from "../components/ui.js";
+import { Btn, DraftTextField, Empty, Field, Panel, Select, Tag } from "../components/ui.js";
 import { PianoKeyboard } from "../components/PianoKeyboard.js";
 import { PadGrid } from "../components/PadGrid.js";
 
@@ -35,7 +35,12 @@ export function LearnView() {
   const activity = useMergedInputActivity(inputPortIds);
 
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [targetRoute, setTargetRoute] = useState<string>(routes[0]?.id ?? "");
+  const [targetRouteId, setTargetRoute] = useState<string>(routes[0]?.id ?? "");
+  // Fall back to the first route if none was picked yet or the picked one is gone.
+  const targetRoute = routes.some((r) => r.id === targetRouteId) ? targetRouteId : (routes[0]?.id ?? "");
+  // What "Start learning" will listen to; editable before starting.
+  const [scope, setScope] = useState<string>(learnState.routeId ?? "__all__");
+  const scopeRouteId = (v: string) => (v === "__all__" || !routes.some((r) => r.id === v) ? undefined : v);
 
   const noteRows = learn.filter((o) => o.kind === "noteOn");
   const selectedNotes = noteRows.filter((o) => sel.has(o.signature) && o.note !== undefined);
@@ -106,10 +111,10 @@ export function LearnView() {
         right={
           <div className="flex items-center gap-2">
             <Select
-              value={learnState.routeId ?? "__all__"}
+              value={learnState.active ? (learnState.routeId ?? "__all__") : scope}
               onChange={(v) => {
-                const routeId = v === "__all__" ? undefined : v;
-                if (learnState.active) send({ kind: "learnStart", routeId });
+                setScope(v);
+                if (learnState.active) send({ kind: "learnStart", routeId: scopeRouteId(v) });
               }}
               options={[{ value: "__all__", label: "All inputs" }, ...routes.map((r) => ({ value: r.id, label: r.name }))]}
             />
@@ -118,7 +123,7 @@ export function LearnView() {
                 Stop
               </Btn>
             ) : (
-              <Btn variant="primary" onClick={() => send({ kind: "learnStart" })}>
+              <Btn variant="primary" onClick={() => send({ kind: "learnStart", routeId: scopeRouteId(scope) })}>
                 Start learning
               </Btn>
             )}
@@ -138,6 +143,10 @@ export function LearnView() {
           {!learnState.active && learn.length === 0 && (
             <Empty>Press “Start learning”, then play your controller. Captured events appear below.</Empty>
           )}
+          <p className="text-[11px] text-muted">
+            “All inputs” records what every input port receives. A route records at its Learn tap if it has one,
+            otherwise what enters the route.
+          </p>
         </div>
       </Panel>
 
@@ -183,10 +192,10 @@ export function LearnView() {
                   </td>
                   <td className="py-1">
                     {o.note !== undefined ? (
-                      <TextField
+                      <DraftTextField
                         value={noteNames[o.note] ?? ""}
                         placeholder={gmDrumName(o.note) ?? "name"}
-                        onChange={(name) => send({ kind: "setNoteName", note: o.note!, name })}
+                        onCommit={(name) => send({ kind: "setNoteName", note: o.note!, name })}
                       />
                     ) : null}
                   </td>

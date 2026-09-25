@@ -10,19 +10,44 @@ import { TRANSFORM_HINTS, TRANSFORM_LABELS, TransformEditor, newTransform } from
 const canSource = (p: RuntimePort) => p.direction === "in" || p.direction === "bidir";
 const canDest = (p: RuntimePort) => p.direction === "out" || p.direction === "bidir";
 
+/**
+ * Local copy of a route that the editors mutate freely; changes are pushed to
+ * the server debounced. Whenever no local edit is pending, the draft follows
+ * the server's version, so changes made elsewhere (Learn tab, another window,
+ * a deleted port, a failed update) are picked up instead of being overwritten
+ * by the next edit.
+ */
 function useRouteDraft(route: Route | undefined) {
   const send = useStore((s) => s.send);
   const [draft, setDraft] = useState<Route | undefined>(route);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inflight = useRef(0);
+  const draftId = useRef(route?.id);
+
+  const idle = () => timer.current === null && inflight.current === 0;
 
   useEffect(() => {
-    setDraft(route);
-  }, [route?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Switching routes always shows the new one; otherwise only adopt server state when idle.
+    if (route?.id !== draftId.current || idle()) {
+      draftId.current = route?.id;
+      setDraft(route);
+    }
+  }, [route]);
 
   const push = (next: Route) => {
     setDraft(next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void send({ kind: "updateRoute", route: next }).catch(() => {}), 150);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      inflight.current++;
+      void send({ kind: "updateRoute", route: next }).then(() => {
+        inflight.current--;
+        if (!idle()) return;
+        // Settle on what the server has now (our echo, or the old route if it refused the edit).
+        const latest = useStore.getState().gs?.preset.routes.find((r) => r.id === next.id);
+        if (latest) setDraft((d) => (d?.id === latest.id ? latest : d));
+      });
+    }, 150);
   };
 
   return [draft, push] as const;

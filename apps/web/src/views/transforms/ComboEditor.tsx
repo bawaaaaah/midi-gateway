@@ -6,7 +6,7 @@ import { OutputSpecEditor } from "./OutputSpecEditor.js";
 type Cfg = Extract<TransformConfig, { type: "combo" }>;
 const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 8)}`;
 
-function TriggerRow({ tr, onChange, onDelete }: { tr: ComboTrigger; onChange: (t: ComboTrigger) => void; onDelete: () => void }) {
+function TriggerRow({ tr, onChange, onDelete }: { tr: ComboTrigger; onChange: (t: ComboTrigger) => void; onDelete?: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded border border-line/60 px-2 py-1">
       <Select
@@ -28,7 +28,7 @@ function TriggerRow({ tr, onChange, onDelete }: { tr: ComboTrigger; onChange: (t
           <NumberField value={tr.threshold ?? 64} min={0} max={127} onChange={(threshold) => onChange({ ...tr, threshold })} />
         </>
       )}
-      <Btn size="sm" variant="ghost" onClick={onDelete}>
+      <Btn size="sm" variant="ghost" disabled={!onDelete} onClick={onDelete} title={onDelete ? undefined : "a combo needs at least one trigger"}>
         ✕
       </Btn>
     </div>
@@ -54,7 +54,11 @@ export function ComboEditor({ config, onChange }: { config: Cfg; onChange: (c: C
             key={tr.id}
             tr={tr}
             onChange={(t) => onChange({ ...config, triggers: config.triggers.map((x) => (x.id === t.id ? t : x)) })}
-            onDelete={() => onChange({ ...config, triggers: config.triggers.filter((x) => x.id !== tr.id) })}
+            onDelete={
+              config.triggers.length > 1
+                ? () => onChange({ ...config, triggers: config.triggers.filter((x) => x.id !== tr.id) })
+                : undefined
+            }
           />
         ))}
         <Btn

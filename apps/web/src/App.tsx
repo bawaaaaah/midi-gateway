@@ -16,6 +16,7 @@ export function App() {
   const latency = useStore((s) => s.latencyMs);
   const gs = useStore((s) => s.gs);
   const lastError = useStore((s) => s.lastError);
+  const clearError = useStore((s) => s.clearError);
   const send = useStore((s) => s.send);
   const setSubscription = useStore((s) => s.setSubscription);
 
@@ -27,7 +28,7 @@ export function App() {
   }, [tab, setSubscription]);
 
   const dirty = gs?.dirty ?? false;
-  const presetName = gs?.activePresetName ?? gs?.preset.name ?? "—";
+  const presetName = gs?.preset.name || "—";
 
   return (
     <div className="flex h-full flex-col">
@@ -71,7 +72,12 @@ export function App() {
       </header>
 
       {lastError && (
-        <div className="border-b border-bad/30 bg-bad/10 px-4 py-1 text-[12px] text-bad">{lastError}</div>
+        <div className="flex items-center border-b border-bad/30 bg-bad/10 px-4 py-1 text-[12px] text-bad">
+          <span>{lastError}</span>
+          <button className="ml-auto px-1 hover:text-ink" onClick={clearError} title="dismiss">
+            ✕
+          </button>
+        </div>
       )}
 
       <main className="min-h-0 flex-1 overflow-auto p-4">
