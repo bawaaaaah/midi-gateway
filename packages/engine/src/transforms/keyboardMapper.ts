@@ -125,9 +125,13 @@ export function createKeyboardMapper(cfg: Cfg): Transform {
           out = MUTED;
         } else {
           const note = spec.note ?? ev.note + (spec.transpose ?? 0);
-          if (note < 0 || note > 127) return []; // out of range -> drop
-          out = { channel: spec.channel ?? ev.channel, note: clamp7(note) };
-          velocity = Math.max(1, applyVelocity(spec.velocity, ev.velocity));
+          if (note < 0 || note > 127) {
+            // Out of range -> drop, but keep tracking it so the note-off is swallowed too.
+            out = MUTED;
+          } else {
+            out = { channel: spec.channel ?? ev.channel, note: clamp7(note) };
+            velocity = Math.max(1, applyVelocity(spec.velocity, ev.velocity));
+          }
         }
 
         // Retrigger of an already-held source key: release it first.
@@ -158,7 +162,11 @@ export function createKeyboardMapper(cfg: Cfg): Transform {
       }
 
       if (ev.kind === "aftertouch" && ev.note !== undefined && inScope(ev.channel)) {
-        // Best-effort: follow the same partition/layer resolution for the note number.
+        // Follow the output the held note-on actually produced, so a pedal move
+        // mid-note doesn't send pressure to a different note.
+        const held = tracker.outputFor(ev.channel, ev.note);
+        if (held) return isMuted(held) ? [] : [{ ...ev, channel: held.channel, note: held.note }];
+        // Not held: best-effort, follow the same partition/layer resolution.
         const spec = resolveSpec(cfg.layers, bucketOf(cfg.partition, ev.note), ctx, ev.channel);
         if (spec && !spec.mute) {
           const note = spec.note ?? ev.note + (spec.transpose ?? 0);

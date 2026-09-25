@@ -25,6 +25,11 @@ export class RouteChain {
     return this.transforms.some((t) => typeof t.tick === "function");
   }
 
+  /** True if an enabled transform of this type is in the chain. */
+  has(type: TransformConfig["type"]): boolean {
+    return this.transforms.some((t) => t.type === type);
+  }
+
   /** Run one event through the whole chain. */
   process(ev: MidiEvent, ctx: RouteContext): MidiEvent[] {
     let stream: MidiEvent[] = [ev];
@@ -49,8 +54,20 @@ export class RouteChain {
     return stream;
   }
 
-  /** Note-offs for everything the chain is holding (route disabled / preset swap / panic). */
+  /**
+   * Note-offs for everything the chain is holding (route disabled / preset swap / panic).
+   * Like {@link tick}, what a transform releases flows through the downstream
+   * transforms, so the note-offs match what was actually sent (e.g. a folded
+   * note that a later `transpose` shifted).
+   */
   flush(ctx: RouteContext): MidiEvent[] {
-    return this.transforms.flatMap((tr) => tr.flush?.(ctx) ?? []);
+    let stream: MidiEvent[] = [];
+    for (const tr of this.transforms) {
+      const next: MidiEvent[] = [];
+      for (const e of stream) next.push(...tr.process(e, ctx));
+      if (tr.flush) next.push(...tr.flush(ctx));
+      stream = next;
+    }
+    return stream;
   }
 }

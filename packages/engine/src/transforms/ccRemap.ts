@@ -10,9 +10,9 @@ type Cfg = Extract<TransformConfig, { type: "ccRemap" }>;
  * A rule with no `fromChannel` matches any channel.
  */
 export function createCcRemap(cfg: Cfg): Transform {
-  // Remember the on/off state per (rule, channel) for CC -> note rules so we
-  // only send a note-off after a note-on and never repeat.
-  const noteHeld = new Map<string, boolean>();
+  // Notes currently held by CC -> note rules, keyed by (rule, channel), so we
+  // only send a note-off after a note-on, never repeat, and can release them on flush.
+  const noteHeld = new Map<string, { channel: number; note: number }>();
 
   const applyRule = (rule: CcRemapRule, ev: Extract<MidiEvent, { kind: "cc" }>): MidiEvent[] => {
     const to = rule.to;
@@ -33,14 +33,15 @@ export function createCcRemap(cfg: Cfg): Transform {
     const channel = to.channel ?? ev.channel;
     const stateKey = `${rule.id}:${channel}`;
     const shouldBeOn = ev.value >= threshold;
-    const isOn = noteHeld.get(stateKey) ?? false;
-    if (shouldBeOn === isOn) return [];
-    noteHeld.set(stateKey, shouldBeOn);
-    return [
-      shouldBeOn
-        ? { t: ev.t, sourceId: ev.sourceId, kind: "noteOn", channel, note: to.note, velocity: clamp7(ev.value) || 100 }
-        : { t: ev.t, sourceId: ev.sourceId, kind: "noteOff", channel, note: to.note, velocity: 0 },
-    ];
+    const held = noteHeld.get(stateKey);
+    if (shouldBeOn === (held !== undefined)) return [];
+    if (shouldBeOn) {
+      noteHeld.set(stateKey, { channel, note: to.note });
+      return [{ t: ev.t, sourceId: ev.sourceId, kind: "noteOn", channel, note: to.note, velocity: clamp7(ev.value) || 100 }];
+    }
+    noteHeld.delete(stateKey);
+    // Release the note that was actually started, even if the rule was edited since.
+    return [{ t: ev.t, sourceId: ev.sourceId, kind: "noteOff", channel: held!.channel, note: held!.note, velocity: 0 }];
   };
 
   return {
@@ -54,17 +55,16 @@ export function createCcRemap(cfg: Cfg): Transform {
       if (!rule) return [ev];
       return applyRule(rule, ev);
     },
-    flush(): MidiEvent[] {
-      const offs: MidiEvent[] = [];
-      for (const [key, held] of noteHeld) {
-        if (!held) continue;
-        const channel = Number(key.split(":")[1]);
-        const rule = cfg.rules.find((r) => r.id === key.split(":")[0]);
-        if (rule && rule.to.kind === "note") {
-          offs.push({ t: 0, sourceId: "", kind: "noteOff", channel, note: rule.to.note, velocity: 0 });
-        }
-        noteHeld.set(key, false);
-      }
+    flush(ctx: RouteContext): MidiEvent[] {
+      const offs: MidiEvent[] = [...noteHeld.values()].map((h) => ({
+        t: ctx.now,
+        sourceId: "",
+        kind: "noteOff" as const,
+        channel: h.channel,
+        note: h.note,
+        velocity: 0,
+      }));
+      noteHeld.clear();
       return offs;
     },
   };

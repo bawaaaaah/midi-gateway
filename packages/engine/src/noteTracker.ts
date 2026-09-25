@@ -71,6 +71,11 @@ export class NoteTracker {
     return { out, emit: this.releaseRef(out) };
   }
 
+  /** The output a held source note is currently sounding, if any. */
+  outputFor(srcChannel: number, srcNote: number): ResolvedOutput | undefined {
+    return this.held.get(key(srcChannel, srcNote));
+  }
+
   /** Every output note currently sounding, for panic / all-notes-off. */
   activeOutputs(): ResolvedOutput[] {
     const seen = new Set<string>();

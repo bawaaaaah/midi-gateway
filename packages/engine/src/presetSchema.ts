@@ -129,7 +129,8 @@ export const transformConfigSchema = z.discriminatedUnion("type", [
 
 export const rtpSessionConfigSchema = z.object({
   sessionName: z.string().min(1),
-  localPort: z.number().int().min(1).max(65535),
+  // The data channel uses localPort + 1.
+  localPort: z.number().int().min(1).max(65534),
   mode: z.enum(["listener", "initiator"]),
   remoteHost: z.string().optional(),
   remotePort: z.number().int().min(1).max(65535).optional(),
@@ -172,7 +173,7 @@ export function parsePreset(data: unknown): Preset {
 /** Bring older preset shapes up to the current schema version. */
 function migrate(data: unknown): unknown {
   if (typeof data !== "object" || data === null) return data;
-  const obj = data as Record<string, unknown>;
+  const obj = { ...(data as Record<string, unknown>) }; // never mutate the caller's object
   if (obj.schemaVersion === undefined) obj.schemaVersion = PRESET_SCHEMA_VERSION;
   // Future: if (obj.schemaVersion === 1) { ...; obj.schemaVersion = 2; }
   return obj;

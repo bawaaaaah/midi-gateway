@@ -1,11 +1,12 @@
-/** General MIDI percussion key map (channel 10). Used by the learn "drum kit" helper. */
+/** General MIDI (GM2) percussion key map (channel 10). Used by the learn "drum kit" helper. */
 export const GM_DRUM_NAMES: Record<number, string> = {
-  27: "Laser / Slap",
-  28: "Whip Slap",
+  27: "High Q",
+  28: "Slap",
   29: "Scratch Push",
   30: "Scratch Pull",
-  31: "Stick Click",
-  32: "Metronome Click",
+  31: "Sticks",
+  32: "Square Click",
+  33: "Metronome Click",
   34: "Metronome Bell",
   35: "Acoustic Bass Drum",
   36: "Kick",

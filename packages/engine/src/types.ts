@@ -115,7 +115,7 @@ export interface OutputSpec {
 
 export type Partition =
   | { mode: "identity" }
-  | { mode: "byPitchClass" } // buckets keyed "0".."11" (C..B)
+  | { mode: "byPitchClass" } // buckets keyed "pc0".."pc11" (C..B)
   | {
       mode: "rangeGenerator";
       /** First note of the first zone. */
